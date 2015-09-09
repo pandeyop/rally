@@ -25,23 +25,13 @@ class InfoTestCase(unittest.TestCase):
         super(InfoTestCase, self).setUp()
         self.rally = utils.Rally()
 
-    def test_find_scenario_group(self):
-        output = self.rally("info find Dummy")
-        self.assertIn("(benchmark scenario group)", output)
-        self.assertIn("Dummy.dummy_exception", output)
-        self.assertIn("Dummy.dummy_random_fail_in_atomic", output)
-
-    def test_find_scenario_group_base_class(self):
-        # NOTE(msdubov): We shouldn't display info about base scenario classes
-        #                containing no end-user scenarios
-        self.assertRaises(utils.RallyCmdError, self.rally,
-                          ("info find CeilometerScenario"))
-
     def test_find_scenario(self):
-        self.assertIn("(benchmark scenario)", self.rally("info find dummy"))
+        self.assertIn("(task scenario)",
+                      self.rally("info find Dummy.dummy"))
 
     def test_find_scenario_misspelling_typos(self):
-        self.assertIn("(benchmark scenario)", self.rally("info find dummi"))
+        self.assertIn("(task scenario)",
+                      self.rally("info find Dummy.dummi"))
 
     def test_find_sla(self):
         expected = "failure_rate (SLA)"
@@ -50,14 +40,6 @@ class InfoTestCase(unittest.TestCase):
     def test_find_sla_misspelling_typos(self):
         expected = "failure_rate (SLA)"
         self.assertIn(expected, self.rally("info find failure_rte"))
-
-    def test_find_sla_by_class_name(self):
-        expected = "failure_rate (SLA)"
-        self.assertIn(expected, self.rally("info find FailureRate"))
-
-    def test_find_sla_by_class_name_misspelling_typos(self):
-        expected = "failure_rate (SLA)"
-        self.assertIn(expected, self.rally("info find FailureRte"))
 
     def test_find_deployment_engine(self):
         marker_string = "ExistingCloud (deploy engine)"
@@ -76,26 +58,30 @@ class InfoTestCase(unittest.TestCase):
         self.assertIn(marker_string, self.rally("info find ExistingServer"))
 
     def test_find_fails(self):
-        self.assertRaises(utils.RallyCmdError, self.rally,
+        self.assertRaises(utils.RallyCliError, self.rally,
                           ("info find NonExistingStuff"))
 
     def test_find_misspelling_truncated(self):
         marker_string = ("NovaServers.boot_and_list_server "
-                         "(benchmark scenario)")
+                         "(task scenario)")
         self.assertIn(marker_string,
                       self.rally("info find boot_and_list"))
 
     def test_find_misspelling_truncated_many_substitutions(self):
         try:
             self.rally("info find Nova")
-        except utils.RallyCmdError as e:
+        except utils.RallyCliError as e:
             self.assertIn("NovaServers", e.output)
             self.assertIn("NovaServers.boot_and_delete_server", e.output)
             self.assertIn("NovaServers.snapshot_server", e.output)
 
+    def test_find_displays_args(self):
+        output = self.rally("info find Dummy.dummy")
+        self.assertIn("sleep: idle time of method (in seconds). [Default: 0]",
+                      output)
+
     def test_list(self):
         output = self.rally("info list")
-        self.assertIn("Benchmark scenario groups:", output)
         self.assertIn("NovaServers", output)
         self.assertIn("SLA checks:", output)
         self.assertIn("failure_rate", output)
@@ -106,7 +92,6 @@ class InfoTestCase(unittest.TestCase):
 
     def test_BenchmarkScenarios(self):
         output = self.rally("info BenchmarkScenarios")
-        self.assertIn("Benchmark scenario groups:", output)
         self.assertIn("NovaServers", output)
         self.assertNotIn("NovaScenario", output)
 

@@ -28,24 +28,25 @@ CONF = cfg.CONF
 
 class ConfigTestCase(test.TestCase):
 
-    @mock.patch("rally.objects.deploy.db.deployment_get")
+    @mock.patch("rally.common.objects.deploy.db.deployment_get")
     @mock.patch("rally.osclients.Clients.services",
                 return_value={"test_service_type": "test_service"})
     @mock.patch("rally.osclients.Clients.verified_keystone")
     @mock.patch("rally.verification.tempest.config.os.path.isfile",
                 return_value=True)
-    def setUp(self, mock_isfile, mock_verified_keystone, mock_services,
-              mock_get):
+    def setUp(self, mock_isfile, mock_clients_verified_keystone,
+              mock_clients_services, mock_deployment_get):
         super(ConfigTestCase, self).setUp()
         self.endpoint = {"username": "test",
                          "tenant_name": "test",
                          "password": "test",
                          "auth_url": "http://test/v2.0",
-                         "permission": "admin"}
-        mock_get.return_value = {"admin": self.endpoint}
+                         "permission": "admin",
+                         "admin_domain_name": "Default"}
+        mock_deployment_get.return_value = {"admin": self.endpoint}
         self.deployment = "fake_deployment"
         self.conf_generator = config.TempestConf(self.deployment)
-        self.conf_generator.clients.services = mock_services
+        self.conf_generator.clients.services = mock_clients_services
 
         keystone_patcher = mock.patch("rally.osclients.create_keystone_client")
         keystone_patcher.start()
@@ -53,7 +54,7 @@ class ConfigTestCase(test.TestCase):
 
     def _remove_default_section(self, items):
         # getting items from configparser by specified section name
-        # retruns also values from DEFAULT section
+        # returns also values from DEFAULT section
         defaults = (("log_file", "tempest.log"), ("debug", "True"),
                     ("use_stderr", "False"))
         return [item for item in items if item not in defaults]
@@ -95,9 +96,9 @@ class ConfigTestCase(test.TestCase):
 
     @mock.patch("rally.verification.tempest.config.TempestConf"
                 "._get_url")
-    def test__set_boto(self, mock_get_url):
+    def test__set_boto(self, mock_tempest_conf__get_url):
         url = "test_url"
-        mock_get_url.return_value = url
+        mock_tempest_conf__get_url.return_value = url
         self.conf_generator._set_boto()
         expected = (("ec2_url", url),
                     ("s3_url", url),
@@ -105,21 +106,11 @@ class ConfigTestCase(test.TestCase):
                     ("build_timeout", "196"),
                     ("http_socket_timeout", "30"),
                     ("instance_type", "m1.nano"),
-                    ("ssh_user", "cirros"),
                     ("s3_materials_path",
                      os.path.join(self.conf_generator.data_path,
                                   "s3materials")))
         results = self._remove_default_section(
             self.conf_generator.conf.items("boto"))
-        self.assertEqual(sorted(expected), sorted(results))
-
-    def test__set_compute_admin(self):
-        self.conf_generator._set_compute_admin()
-        expected = [("username", self.endpoint["username"]),
-                    ("password", self.endpoint["password"]),
-                    ("tenant_name", self.endpoint["tenant_name"])]
-        results = self._remove_default_section(
-            self.conf_generator.conf.items("compute-admin"))
         self.assertEqual(sorted(expected), sorted(results))
 
     def test__set_compute_flavors(self):
@@ -216,18 +207,24 @@ class ConfigTestCase(test.TestCase):
                          self.conf_generator.conf.get("compute",
                                                       "ssh_connect_method"))
 
+    def test__set_default(self):
+        self.conf_generator._set_default()
+        expected = (("debug", "True"), ("log_file", "tempest.log"),
+                    ("use_stderr", "False"))
+        results = self.conf_generator.conf.items("DEFAULT")
+        self.assertEqual(sorted(expected), sorted(results))
+
     @mock.patch("rally.verification.tempest.config.os.path.exists",
                 return_value=False)
     @mock.patch("rally.verification.tempest.config.os.makedirs")
-    def test__set_default(self, mock_makedirs, mock_exists):
-        self.conf_generator._set_default()
+    def test__set_oslo_concurrency(self, mock_makedirs, mock_exists):
+        self.conf_generator._set_oslo_concurrency()
         lock_path = os.path.join(self.conf_generator.data_path, "lock_files_%s"
                                  % self.deployment)
         mock_makedirs.assert_called_once_with(lock_path)
-        expected = (("debug", "True"), ("log_file", "tempest.log"),
-                    ("use_stderr", "False"),
-                    ("lock_path", lock_path))
-        results = self.conf_generator.conf.items("DEFAULT")
+        expected = (("lock_path", lock_path),)
+        results = self._remove_default_section(
+            self.conf_generator.conf.items("oslo_concurrency"))
         self.assertEqual(sorted(expected), sorted(results))
 
     def test__set_identity(self):
@@ -241,6 +238,7 @@ class ConfigTestCase(test.TestCase):
                     ("admin_username", self.endpoint["username"]),
                     ("admin_password", self.endpoint["password"]),
                     ("admin_tenant_name", self.endpoint["username"]),
+                    ("admin_domain_name", self.endpoint["admin_domain_name"]),
                     ("uri", self.endpoint["auth_url"]),
                     ("uri_v3", self.endpoint["auth_url"].replace("/v2.0",
                                                                  "/v3")))
@@ -266,9 +264,8 @@ class ConfigTestCase(test.TestCase):
                                              mock_neutron}):
             self.conf_generator.available_services = ["neutron"]
             self.conf_generator._set_network()
-            expected = (("default_network", "10.0.0.0/24"),
-                        ("tenant_networks_reachable", "false"),
-                        ("api_version", "2.0"),
+            expected = (("tenant_network_cidr", "10.0.0.0/24"),
+                        ("tenant_networks_reachable", "False"),
                         ("public_network_id", "test_id"),
                         ("public_router_id", "test_router"))
             results = self._remove_default_section(
@@ -286,8 +283,8 @@ class ConfigTestCase(test.TestCase):
         with mock.patch.dict("sys.modules", {"novaclient": mock_nova}):
             self.conf_generator._set_network()
             self.assertEqual(network,
-                             self.conf_generator.conf.get("network",
-                                                          "default_network"))
+                             self.conf_generator.conf.get(
+                                 "network", "tenant_network_cidr"))
 
     @mock.patch("rally.verification.tempest.config.requests")
     def test__set_service_available(self, mock_requests):
@@ -315,8 +312,8 @@ class ConfigTestCase(test.TestCase):
             "service_available", "horizon"), "True")
 
     @mock.patch("rally.verification.tempest.config.requests.get")
-    def test__set_service_not_available_horizon(self, mock_requests_get):
-        mock_requests_get.side_effect = requests.Timeout()
+    def test__set_service_not_available_horizon(self, mock_get):
+        mock_get.side_effect = requests.Timeout()
         self.conf_generator._set_service_available()
         self.assertEqual(self.conf_generator.conf.get(
             "service_available", "horizon"), "False")

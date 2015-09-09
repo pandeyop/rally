@@ -23,11 +23,11 @@ import requests
 from six.moves import configparser
 from six.moves.urllib import parse
 
+from rally.common import db
 from rally.common.i18n import _
 from rally.common import log as logging
-from rally import db
+from rally.common import objects
 from rally import exceptions
-from rally import objects
 from rally import osclients
 
 
@@ -36,11 +36,14 @@ LOG = logging.getLogger(__name__)
 
 IMAGE_OPTS = [
     cfg.StrOpt("cirros_version",
-               default="0.3.2",
+               default="0.3.4",
                help="Version of cirros image"),
     cfg.StrOpt("cirros_image",
-               default="cirros-0.3.2-x86_64-disk.img",
+               default="cirros-0.3.4-x86_64-disk.img",
                help="Cirros image name"),
+    cfg.StrOpt("cirros_base_url",
+               default="http://download.cirros-cloud.net",
+               help="Cirros image base URL"),
 ]
 CONF = cfg.CONF
 CONF.register_opts(IMAGE_OPTS, "image")
@@ -78,8 +81,9 @@ class TempestConf(object):
             self._load_img()
 
     def _load_img(self):
-        cirros_url = ("http://download.cirros-cloud.net/%s/%s" %
-                      (CONF.image.cirros_version,
+        cirros_url = ("%s/%s/%s" %
+                      (CONF.image.cirros_base_url,
+                       CONF.image.cirros_version,
                        CONF.image.cirros_image))
         try:
             response = requests.get(cirros_url, stream=True)
@@ -110,11 +114,15 @@ class TempestConf(object):
                 return service["endpoints"][0]["publicURL"]
 
     def _set_default(self):
+        # Nothing to set up in this section for now
+        pass
+
+    def _set_oslo_concurrency(self, section_name="oslo_concurrency"):
         lock_path = os.path.join(self.data_path,
                                  "lock_files_%s" % self.deployment)
         if not os.path.exists(lock_path):
             os.makedirs(lock_path)
-        self.conf.set("DEFAULT", "lock_path", lock_path)
+        self.conf.set(section_name, "lock_path", lock_path)
 
     def _set_boto(self, section_name="boto"):
         self.conf.set(section_name, "ec2_url", self._get_url("ec2"))
@@ -172,12 +180,6 @@ class TempestConf(object):
         else:
             self.conf.set(section_name, "ssh_connect_method", "fixed")
 
-    def _set_compute_admin(self, section_name="compute-admin"):
-        self.conf.set(section_name, "username", self.endpoint["username"])
-        self.conf.set(section_name, "password", self.endpoint["password"])
-        self.conf.set(section_name, "tenant_name",
-                      self.endpoint["tenant_name"])
-
     def _set_identity(self, section_name="identity"):
         self.conf.set(section_name, "username", self.endpoint["username"])
         self.conf.set(section_name, "password", self.endpoint["password"])
@@ -196,6 +198,8 @@ class TempestConf(object):
         self.conf.set(section_name, "uri", self.endpoint["auth_url"])
         self.conf.set(section_name, "uri_v3",
                       self.endpoint["auth_url"].replace("/v2.0", "/v3"))
+        self.conf.set(section_name, "admin_domain_name",
+                      self.endpoint["admin_domain_name"])
 
     def _set_network(self, section_name="network"):
         if "neutron" in self.available_services:
@@ -223,10 +227,10 @@ class TempestConf(object):
                 else:
                     # TODO(akurilin): create subnet
                     LOG.warn("No subnet is found.")
-            self.conf.set(section_name, "default_network", subnet["cidr"])
+            self.conf.set(section_name, "tenant_network_cidr", subnet["cidr"])
         else:
             network = self.clients.nova().networks.list()[0]
-            self.conf.set(section_name, "default_network", network.cidr)
+            self.conf.set(section_name, "tenant_network_cidr", network.cidr)
 
     def _set_service_available(self, section_name="service_available"):
         services = ["neutron", "heat", "ceilometer", "swift",
