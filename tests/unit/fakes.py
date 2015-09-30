@@ -1035,6 +1035,8 @@ class FakeNeutronClient(object):
         self.__routers = {}
         self.__ports = {}
         self.__pools = {}
+        self.__vips = {}
+        self.__fips = {}
         self.__tenant_id = kwargs.get("tenant_id", generate_uuid())
 
         self.format = "json"
@@ -1097,6 +1099,36 @@ class FakeNeutronClient(object):
                      "tenant_id": self.__tenant_id})
         self.__pools[pool_id] = pool
         return {"pool": pool}
+
+    def create_vip(self, data):
+        vip = setup_dict(data["vip"],
+                         required=["protocol_port", "protocol", "subnet_id",
+                                   "pool_id"],
+                         defaults={"name": generate_name("vip_"),
+                                   "admin_state_up": True})
+        if (vip["subnet_id"] not in self.__subnets) or (vip["pool_id"] not in
+                                                        self.__pools):
+            raise neutron_exceptions.NeutronClientException
+        vip_id = generate_uuid()
+
+        vip.update({"id": vip_id,
+                    "status": "PENDING_CREATE",
+                    "tenant_id": self.__tenant_id})
+        self.__vips[vip_id] = vip
+        return {"vip": vip}
+
+    def create_floatingip(self, data):
+        fip = setup_dict(data["floatingip"],
+                         required=["floating_network"],
+                         defaults={"admin_state_up": True})
+        if (fip["floating_network"] not in self.__nets):
+            raise neutron_exceptions.NeutronClientException
+        fip_id = generate_uuid()
+
+        fip.update({"id": fip_id,
+                    "tenant_id": self.__tenant_id})
+        self.__fips[fip_id] = fip
+        return {"fip": fip}
 
     def create_port(self, data):
         port = setup_dict(data["port"],
@@ -1171,6 +1203,9 @@ class FakeNeutronClient(object):
     def update_pool(self, pool_id, data):
         self.update_resource(pool_id, self.__pools, data)
 
+    def update_vip(self, vip_id, data):
+        self.update_resource(vip_id, self.__vips, data)
+
     def update_subnet(self, subnet_id, data):
         self.update_resource(subnet_id, self.__subnets, data)
 
@@ -1194,6 +1229,18 @@ class FakeNeutronClient(object):
         if pool_id not in self.__pools:
             raise neutron_exceptions.NeutronClientException
         del self.__pools[pool_id]
+        return ""
+
+    def delete_vip(self, vip_id):
+        if vip_id not in self.__vips:
+            raise neutron_exceptions.NeutronClientException
+        del self.__vips[vip_id]
+        return ""
+
+    def delete_floatingip(self, fip_id):
+        if fip_id not in self.__fips:
+            raise neutron_exceptions.NeutronClientException
+        del self.__fips[fip_id]
         return ""
 
     def delete_port(self, port_id):
@@ -1234,6 +1281,10 @@ class FakeNeutronClient(object):
         pools = self._filter(self.__pools.values(), search_opts)
         return {"pools": pools}
 
+    def list_vips(self, **search_opts):
+        vips = self._filter(self.__vips.values(), search_opts)
+        return {"vips": vips}
+
     def list_ports(self, **search_opts):
         ports = self._filter(self.__ports.values(), search_opts)
         return {"ports": ports}
@@ -1245,6 +1296,10 @@ class FakeNeutronClient(object):
     def list_subnets(self, **search_opts):
         subnets = self._filter(self.__subnets.values(), search_opts)
         return {"subnets": subnets}
+
+    def list_floatingips(self, **search_opts):
+        fips = self._filter(self.__fips.values(), search_opts)
+        return {"floatingips": fips}
 
     def remove_interface_router(self, router_id, data):
         subnet_id = data["subnet_id"]
@@ -1555,6 +1610,16 @@ class FakeDeployment(dict):
 
 
 class FakeTask(dict):
+
+    def __init__(self, task=None, temporary=False, **kwargs):
+        self.is_temporary = temporary
+        self.task = task or kwargs
+        self.set_failed = mock.Mock()
+
+    def __getitem__(self, key):
+        if key in self:
+            return self[key]
+        return self.task[key]
 
     def to_dict(self):
         return self

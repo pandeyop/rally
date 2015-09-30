@@ -55,12 +55,12 @@ class VerifyCommandsTestCase(test.TestCase):
         mock_clients().nova().flavors.list.return_value = [
             self.flavor1, self.flavor2]
 
-        self.verify.start(deployment=deployment_id)
+        self.verify.start(deployment=deployment_id, do_use=False)
         default_set_name = "full"
         default_regex = None
 
         mock_verification_verify.assert_called_once_with(
-            deployment_id, default_set_name, default_regex, None)
+            deployment_id, default_set_name, default_regex, None, False)
 
     @mock.patch("rally.osclients.Clients")
     @mock.patch("rally.api.Verification.verify")
@@ -73,13 +73,13 @@ class VerifyCommandsTestCase(test.TestCase):
             self.flavor1, self.flavor2]
         tempest_config = tempfile.NamedTemporaryFile()
         self.verify.start(deployment=deployment_id,
-                          tempest_config=tempest_config.name)
+                          tempest_config=tempest_config.name, do_use=False)
         default_set_name = "full"
         default_regex = None
 
         mock_verification_verify.assert_called_once_with(
             deployment_id, default_set_name, default_regex,
-            tempest_config.name)
+            tempest_config.name, False)
         tempest_config.close()
 
     @mock.patch("rally.api.Verification.verify")
@@ -88,11 +88,34 @@ class VerifyCommandsTestCase(test.TestCase):
 
         wrong_set_name = "unexpected_value"
 
-        self.verify.start(deployment_id, wrong_set_name)
+        self.verify.start(deployment_id, wrong_set_name, do_use=False)
 
         self.assertNotIn(wrong_set_name, consts.TempestTestsSets,
                          consts.TempestTestsAPI)
         self.assertFalse(mock_verification_verify.called)
+
+    @mock.patch("rally.api.Verification.import_file")
+    def test_import_file(self, mock_verification_import_file):
+        deployment_id = "fake_uuid"
+        mock_verification_import_file.return_value = (None, None)
+        self.verify.import_file(deployment=deployment_id, do_use=False)
+        default_set_name = None
+        default_log_file = None
+
+        mock_verification_import_file.assert_called_once_with(
+            deployment_id, default_set_name, default_log_file)
+
+    @mock.patch("rally.api.Verification.import_file")
+    def test_import_file_without_defaults(self, mock_verification_import_file):
+        deployment_id = "fake_uuid"
+        set_name = "fake_set_name"
+        log_file = "fake_log_file"
+        mock_verification_import_file.return_value = (None, None)
+        self.verify.import_file(deployment=deployment_id, set_name=set_name,
+                                log_file=log_file, do_use=False)
+
+        mock_verification_import_file.assert_called_once_with(
+            deployment_id, set_name, log_file)
 
     @mock.patch("rally.cli.cliutils.print_list")
     @mock.patch("rally.common.db.verification_list")
@@ -318,3 +341,95 @@ class VerifyCommandsTestCase(test.TestCase):
             uuid=verification_id)
         self.assertRaises(exceptions.NotFoundException, self.verify.use,
                           verification_id)
+
+    @mock.patch("rally.api.Verification.configure_tempest")
+    def test_genconfig(self, mock_verification_configure_tempest):
+        deployment_id = "14377d10-ca77-4104-aba8-36edebcfc120"
+        self.verify.genconfig(deployment_id)
+        mock_verification_configure_tempest.assert_called_once_with(
+            deployment_id, None, False)
+
+    @mock.patch("rally.api.Verification.configure_tempest")
+    def test_genconfig_with_config_specified(
+            self, mock_verification_configure_tempest):
+        deployment_id = "68b501af-a553-431c-83ac-30f93a112231"
+        tempest_conf = "/tmp/tempest.conf"
+        self.verify.genconfig(deployment_id, tempest_config=tempest_conf)
+        mock_verification_configure_tempest.assert_called_once_with(
+            deployment_id, tempest_conf, False)
+
+    @mock.patch("rally.api.Verification.configure_tempest")
+    def test_genconfig_override_config(
+            self, mock_verification_configure_tempest):
+        deployment_id = "cd5b64ad-c12f-4781-a89e-95535b145a11"
+        self.verify.genconfig(deployment_id, override=True)
+        mock_verification_configure_tempest.assert_called_once_with(
+            deployment_id, None, True)
+
+    @mock.patch("rally.api.Verification.configure_tempest")
+    def test_genconfig_with_config_specified_and_override_config(
+            self, mock_verification_configure_tempest):
+        deployment_id = "89982aba-efef-48cb-8d94-ca893b4e78a6"
+        tempest_conf = "/tmp/tempest.conf"
+        self.verify.genconfig(deployment_id,
+                              tempest_config=tempest_conf, override=True)
+        mock_verification_configure_tempest.assert_called_once_with(
+            deployment_id, tempest_conf, True)
+
+    @mock.patch("rally.api.Verification.install_tempest")
+    def test_install(self, mock_verification_install_tempest):
+        deployment_uuid = "d26ebebc-3a5f-4d0d-9021-0c883bd560f5"
+        self.verify.install(deployment_uuid)
+        mock_verification_install_tempest.assert_called_once_with(
+            deployment_uuid, None)
+
+    @mock.patch("rally.api.Verification.install_tempest")
+    def test_install_with_source_specified(
+            self, mock_verification_install_tempest):
+        deployment_uuid = "83514de2-a770-4e28-82dd-2826b725e733"
+        source = "/tmp/tempest"
+        self.verify.install(deployment_uuid, source)
+        mock_verification_install_tempest.assert_called_once_with(
+            deployment_uuid, source)
+
+    @mock.patch("rally.api.Verification.uninstall_tempest")
+    def test_uninstall(self, mock_verification_uninstall_tempest):
+        deployment_uuid = "f92e7cb2-9fc7-43d4-a86e-8c924b025404"
+        self.verify.uninstall(deployment_uuid)
+        mock_verification_uninstall_tempest.assert_called_once_with(
+            deployment_uuid)
+
+    @mock.patch("rally.api.Verification.reinstall_tempest")
+    def test_reinstall(self, mock_verification_reinstall_tempest):
+        deployment_uuid = "05e0879b-9150-4e42-b6a0-3c6e48197cc1"
+        self.verify.reinstall(deployment_uuid)
+        mock_verification_reinstall_tempest.assert_called_once_with(
+            deployment_uuid, None, None)
+
+    @mock.patch("rally.api.Verification.reinstall_tempest")
+    def test_reinstall_with_config_specified(
+            self, mock_verification_reinstall_tempest):
+        deployment_uuid = "83514de2-a770-4e28-82dd-2826b725e733"
+        tempest_conf = "/tmp/tempest.conf"
+        self.verify.reinstall(deployment_uuid, tempest_config=tempest_conf)
+        mock_verification_reinstall_tempest.assert_called_once_with(
+            deployment_uuid, tempest_conf, None)
+
+    @mock.patch("rally.api.Verification.reinstall_tempest")
+    def test_reinstall_with_source_specified(
+            self, mock_verification_reinstall_tempest):
+        deployment_uuid = "9de60506-8c7a-409f-9ea6-2900f674532d"
+        source = "/tmp/tempest"
+        self.verify.reinstall(deployment_uuid, source=source)
+        mock_verification_reinstall_tempest.assert_called_once_with(
+            deployment_uuid, None, source)
+
+    @mock.patch("rally.api.Verification.reinstall_tempest")
+    def test_reinstall_with_config_and_source_specified(
+            self, mock_verification_reinstall_tempest):
+        deployment_uuid = "f71fb1e2-c442-4889-aaf8-69754828f5f0"
+        tempest_conf = "/tmp/tempest.conf"
+        source = "/tmp/tempest"
+        self.verify.reinstall(deployment_uuid, tempest_conf, source)
+        mock_verification_reinstall_tempest.assert_called_once_with(
+            deployment_uuid, tempest_conf, source)

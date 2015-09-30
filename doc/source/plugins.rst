@@ -18,15 +18,46 @@
 Rally Plugins
 =============
 
+Rally Plugin Reference
+---------------------------
+
+Rally has a plugin oriented architecture - in other words Rally team is trying
+to make all places of code pluggable. Such architecture leds to the big amount
+of plugins. :ref:`Rally Plugins Reference page <plugin_reference>` contains a
+full list with detailed descriptions of all official Rally plugins.
+
+
 How plugins work
 ----------------
 
-Rally provides an opportunity to create and use a **custom benchmark scenario, runner or context** as a **plugin**:
+Rally provides an opportunity to create and use a **custom benchmark
+scenario, runner or context** as a **plugin**:
 
 .. image:: ./images/Rally-Plugins.png
    :align: center
 
-Plugins can be quickly written and used, with no need to contribute them to the actual Rally code. Just place a python module with your plugin class into the **/opt/rally/plugins** or **~/.rally/plugins** directory (or it's subdirectories), and it will be autoloaded.
+Placement
+---------
+
+Plugins can be quickly written and used, with no need to contribute
+them to the actual Rally code. Just place a python module with your
+plugin class into the ``/opt/rally/plugins`` or ``~/.rally/plugins``
+directory (or its subdirectories), and it will be
+autoloaded. Additional paths can be specified with the
+``--plugin-paths`` argument, or with the ``RALLY_PLUGIN_PATHS``
+environment variable, both of which accept comma-delimited
+lists. Both ``--plugin-paths`` and ``RALLY_PLUGIN_PATHS`` can list
+either plugin module files, or directories containing plugins. For
+instance, both of these are valid:
+
+.. code-block:: bash
+
+    rally --plugin-paths /rally/plugins ...
+    rally --plugin-paths /rally/plugins/foo.py,/rally/plugins/bar.py ...
+
+You can also use a script ``unpack_plugins_samples.sh`` from
+``samples/plugins`` which will automatically create the
+``~/.rally/plugins`` directory.
 
 
 Example: Benchmark scenario as a plugin
@@ -39,7 +70,7 @@ Creation
 
 Inherit a class for your plugin from the base *Scenario* class and implement a scenario method inside it as usual. In our scenario, let us first list flavors as an ordinary user, and then repeat the same using admin clients:
 
-.. code-block:: none
+.. code-block:: python
 
     from rally.task import atomic
     from rally.task import scenario
@@ -68,18 +99,12 @@ Inherit a class for your plugin from the base *Scenario* class and implement a s
             self._list_flavors_as_admin()
 
 
-Placement
-^^^^^^^^^
-
-Put the python module with your plugin class into the **/opt/rally/plugins** or **~/.rally/plugins** directory or it's subdirectories and it will be autoloaded. You can also use a script **unpack_plugins_samples.sh** from **samples/plugins** which will automatically create the **~/.rally/plugins** directory.
-
-
 Usage
 ^^^^^
 
 You can refer to your plugin scenario in the benchmark task configuration files just in the same way as to any other scenarios:
 
-.. code-block:: none
+.. code-block:: json
 
     {
         "ScenarioPlugin.list_flavors": [
@@ -110,7 +135,7 @@ Creation
 
 Inherit a class for your plugin from the base *Context* class. Then, implement the Context API: the *setup()* method that creates a flavor and the *cleanup()* method that deletes it.
 
-.. code-block:: none
+.. code-block:: python
 
     from rally.task import context
     from rally.common import log as logging
@@ -186,19 +211,12 @@ Inherit a class for your plugin from the base *Context* class. Then, implement t
                     LOG.warning(msg)
 
 
-
-Placement
-^^^^^^^^^
-
-Put the python module with your plugin class into the **/opt/rally/plugins** or **~/.rally/plugins** directory or it's subdirectories and it will be autoloaded. You can also use a script **unpack_plugins_samples.sh** from **samples/plugins** which will automatically create the **~/.rally/plugins** directory.
-
-
 Usage
 ^^^^^
 
 You can refer to your plugin context in the benchmark task configuration files just in the same way as to any other contexts:
 
-.. code-block:: none
+.. code-block:: json
 
     {
         "Dummy.dummy": [
@@ -234,7 +252,7 @@ Creation
 
 Inherit a class for your plugin from the base *SLA* class and implement its API (the *add_iteration(iteration)*, the *details()* method):
 
-.. code-block:: none
+.. code-block:: python
 
     from rally.task import sla
     from rally.common.i18n import _
@@ -271,18 +289,12 @@ Inherit a class for your plugin from the base *SLA* class and implement its API 
                     (self.status(), self._max - self._min, self.criterion_value))
 
 
-Placement
-^^^^^^^^^
-
-Put the python module with your plugin class into the **/opt/rally/plugins** or **~/.rally/plugins** directory or it's subdirectories and it will be autoloaded. You can also use a script **unpack_plugins_samples.sh** from **samples/plugins** which will automatically create the **~/.rally/plugins** directory.
-
-
 Usage
 ^^^^^
 
 You can refer to your SLA in the benchmark task configuration files just in the same way as to any other SLA:
 
-.. code-block:: none
+.. code-block:: json
 
     {
         "Dummy.dummy": [
@@ -319,7 +331,7 @@ Creation
 
 Inherit a class for your plugin from the base *ScenarioRunner* class and implement its API (the *_run_scenario()* method):
 
-.. code-block:: none
+.. code-block:: python
 
     import random
 
@@ -366,20 +378,12 @@ Inherit a class for your plugin from the base *ScenarioRunner* class and impleme
                 # use self.send_result for result of each iteration
                 self._send_result(result)
 
-
-
-Placement
-^^^^^^^^^
-
-Put the python module with your plugin class into the **/opt/rally/plugins** or **~/.rally/plugins** directory or it's subdirectories and it will be autoloaded. You can also use a script **unpack_plugins_samples.sh** from **samples/plugins** which will automatically create the **~/.rally/plugins** directory.
-
-
 Usage
 ^^^^^
 
 You can refer to your scenario runner in the benchmark task configuration files just in the same way as to any other runners. Don't forget to put you runner-specific parameters to the configuration as well (*"min_times"* and *"max_times"* in our example):
 
-.. code-block:: none
+.. code-block:: json
 
     {
         "Dummy.dummy": [

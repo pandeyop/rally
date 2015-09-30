@@ -19,6 +19,7 @@ from saharaclient.api import base as saharaclient_base
 
 from rally.common import log as logging
 from rally.plugins.openstack.context.cleanup import base
+from rally.plugins.openstack import scenario
 from rally.plugins.openstack.scenarios.keystone import utils as kutils
 from rally.plugins.openstack.wrappers import keystone as keystone_wrapper
 
@@ -90,6 +91,11 @@ class NovaServer(base.ResourceManager):
         if getattr(self.raw_resource, "OS-EXT-STS:locked", False):
             self.raw_resource.unlock()
         super(NovaServer, self).delete()
+
+
+@base.resource("nova", "floating_ips", order=next(_nova_order))
+class NovaFloatingIPs(SynchronizedDeletion, base.ResourceManager):
+    pass
 
 
 @base.resource("nova", "keypairs", order=next(_nova_order))
@@ -239,6 +245,12 @@ class NeutronRouter(NeutronMixin):
     pass
 
 
+@base.resource("neutron", "vip", order=next(_neutron_order),
+               tenant_resource=True)
+class NeutronV1Vip(NeutronLbaasV1Mixin):
+    pass
+
+
 @base.resource("neutron", "pool", order=next(_neutron_order),
                tenant_resource=True)
 class NeutronV1Pool(NeutronLbaasV1Mixin):
@@ -254,6 +266,12 @@ class NeutronSubnet(NeutronMixin):
 @base.resource("neutron", "network", order=next(_neutron_order),
                tenant_resource=True)
 class NeutronNetwork(NeutronMixin):
+    pass
+
+
+@base.resource("neutron", "floatingip", order=next(_neutron_order),
+               tenant_resource=True)
+class NeutronFloatingIP(NeutronMixin):
     pass
 
 
@@ -523,6 +541,28 @@ class IronicNodes(base.ResourceManager):
 
     def id(self):
         return self.raw_resource.uuid
+
+
+# FUEL
+
+@base.resource("fuel", "environment", order=1400,
+               admin_required=True, perform_for_admin_only=True)
+class FuelEnvironment(base.ResourceManager):
+    """Fuel environment.
+
+    That is the only resource that can be deleted by fuelclient explicitly.
+    """
+
+    def id(self):
+        return self.raw_resource["id"]
+
+    def is_deleted(self):
+        return not self._manager().get(self.id())
+
+    def list(self):
+        return [env for env in self._manager().list()
+                if env["name"].startswith(
+                    scenario.OpenStackScenario.RESOURCE_NAME_PREFIX)]
 
 
 # KEYSTONE

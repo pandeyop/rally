@@ -15,15 +15,20 @@
 
 """Tests for db.task layer."""
 
+import datetime
 import json
 
+import ddt
+import jsonschema
 import mock
 
 from rally.common import objects
 from rally import consts
+from rally import exceptions
 from tests.unit import test
 
 
+@ddt.ddt
 class TaskTestCase(test.TestCase):
     def setUp(self):
         super(TaskTestCase, self).setUp()
@@ -51,7 +56,7 @@ class TaskTestCase(test.TestCase):
                 return_value="some_uuid")
     @mock.patch("rally.common.objects.task.db.task_create")
     def test_init_with_fake_true(self, mock_task_create, mock_uuid4):
-        task = objects.Task(fake=True)
+        task = objects.Task(temporary=True)
         self.assertFalse(mock_task_create.called)
         self.assertTrue(mock_uuid4.called)
         self.assertEqual(task["uuid"], mock_uuid4.return_value)
@@ -62,6 +67,12 @@ class TaskTestCase(test.TestCase):
         task = objects.Task.get(self.task["uuid"])
         mock_task_get.assert_called_once_with(self.task["uuid"])
         self.assertEqual(task["uuid"], self.task["uuid"])
+
+    @mock.patch("rally.common.objects.task.db.task_get_status")
+    def test_get_status(self, mock_task_get_status):
+        task = objects.Task(task=self.task)
+        status = task.get_status(task["uuid"])
+        self.assertEqual(status, mock_task_get_status.return_value)
 
     @mock.patch("rally.common.objects.task.db.task_delete")
     @mock.patch("rally.common.objects.task.db.task_create")
@@ -120,15 +131,34 @@ class TaskTestCase(test.TestCase):
             self.task["uuid"], {"opt": "val2"})
         self.assertEqual(deploy["opt"], "val2")
 
+    @ddt.data(
+        {
+            "status": "some_status", "allowed_statuses": ("s_1", "s_2")
+        },
+        {
+            "status": "some_status", "allowed_statuses": None
+        }
+    )
+    @ddt.unpack
+    @mock.patch("rally.common.objects.task.db.task_update_status")
     @mock.patch("rally.common.objects.task.db.task_update")
-    def test_update_status(self, mock_task_update):
-        mock_task_update.return_value = self.task
+    def test_update_status(self, mock_task_update, mock_task_update_status,
+                           status, allowed_statuses):
         task = objects.Task(task=self.task)
-        task.update_status(consts.TaskStatus.FINISHED)
-        mock_task_update.assert_called_once_with(
-            self.task["uuid"],
-            {"status": consts.TaskStatus.FINISHED},
-        )
+        task.update_status(consts.TaskStatus.FINISHED, allowed_statuses)
+        if allowed_statuses:
+            self.assertFalse(mock_task_update.called)
+            mock_task_update_status.assert_called_once_with(
+                self.task["uuid"],
+                consts.TaskStatus.FINISHED,
+                allowed_statuses
+            )
+        else:
+            self.assertFalse(mock_task_update_status.called)
+            mock_task_update.assert_called_once_with(
+                self.task["uuid"],
+                {"status": consts.TaskStatus.FINISHED},
+            )
 
     @mock.patch("rally.common.objects.task.db.task_update")
     def test_update_verification_log(self, mock_task_update):
@@ -139,6 +169,56 @@ class TaskTestCase(test.TestCase):
             self.task["uuid"],
             {"verification_log": json.dumps({"a": "fake"})}
         )
+
+    def test_extend_results(self):
+        self.assertRaises(TypeError, objects.Task.extend_results)
+
+        now = datetime.datetime.now()
+        iterations = [
+            {"timestamp": i + 2, "error": [], "duration": i + 5,
+             "scenario_output": {"errors": "", "data": {}},
+             "error": [], "idle_duration": i,
+             "atomic_actions": {
+                 "keystone.create_user": i + 10}} for i in range(10)]
+        obsolete = [
+            {"task_uuid": "foo_uuid", "created_at": now, "updated_at": None,
+             "id": 11, "key": {"kw": {"foo": 42},
+                               "name": "Foo.bar", "pos": 0},
+             "data": {"raw": iterations, "sla": [],
+                      "full_duration": 40, "load_duration": 32}}]
+        expected = [
+            {"iterations": "foo_iterations", "sla": [],
+             "key": {"kw": {"foo": 42}, "name": "Foo.bar", "pos": 0},
+             "info": {
+                 "atomic": {"keystone.create_user": {"max_duration": 19,
+                                                     "min_duration": 10}},
+             "iterations_count": 10, "iterations_failed": 0,
+             "max_duration": 14, "min_duration": 5, "output_names": [],
+             "tstamp_start": 2, "full_duration": 40, "load_duration": 32}}]
+
+        # serializable is default
+        results = objects.Task.extend_results(obsolete)
+        self.assertIsInstance(results[0]["iterations"], type(iter([])))
+        self.assertEqual(list(results[0]["iterations"]), iterations)
+        results[0]["iterations"] = "foo_iterations"
+        self.assertEqual(results, expected)
+
+        # serializable is False
+        results = objects.Task.extend_results(obsolete, serializable=False)
+        self.assertIsInstance(results[0]["iterations"], type(iter([])))
+        self.assertEqual(list(results[0]["iterations"]), iterations)
+        results[0]["iterations"] = "foo_iterations"
+        self.assertEqual(results, expected)
+
+        # serializable is True
+        results = objects.Task.extend_results(obsolete, serializable=True)
+        self.assertEqual(list(results[0]["iterations"]), iterations)
+        expected[0]["created_at"] = now.strftime("%Y-%d-%mT%H:%M:%S")
+        expected[0]["updated_at"] = None
+        jsonschema.validate(results[0],
+                            objects.task.TASK_EXTENDED_RESULT_SCHEMA)
+        results[0]["iterations"] = "foo_iterations"
+        self.assertEqual(results, expected)
 
     @mock.patch("rally.common.objects.task.db.task_result_get_all_by_uuid",
                 return_value="foo_results")
@@ -164,4 +244,78 @@ class TaskTestCase(test.TestCase):
         mock_task_update.assert_called_once_with(
             self.task["uuid"],
             {"status": consts.TaskStatus.FAILED, "verification_log": "\"\""},
+        )
+
+    @ddt.data(
+        {
+            "soft": True, "status": consts.TaskStatus.INIT
+        },
+        {
+            "soft": True, "status": consts.TaskStatus.VERIFYING
+        },
+        {
+            "soft": False, "status": consts.TaskStatus.INIT
+        },
+        {
+            "soft": False, "status": consts.TaskStatus.VERIFYING
+        }
+    )
+    @ddt.unpack
+    def test_abort_with_init_and_verifying_states(self, soft, status):
+        task = objects.Task(mock.MagicMock(), fake=True)
+        task.get_status = mock.MagicMock(
+            side_effect=(status, status, "running"))
+        task._update_status_in_abort = mock.MagicMock()
+
+        self.assertRaises(exceptions.RallyException, task.abort, soft)
+        self.assertEqual(1, task.get_status.call_count)
+        self.assertFalse(task._update_status_in_abort.called)
+
+    @ddt.data(
+        {
+            "soft": True, "status": consts.TaskStatus.ABORTED
+        },
+        {
+            "soft": True, "status": consts.TaskStatus.FINISHED
+        },
+        {
+            "soft": True, "status": consts.TaskStatus.FAILED
+        },
+        {
+            "soft": False, "status": consts.TaskStatus.ABORTED
+        },
+        {
+            "soft": False, "status": consts.TaskStatus.FINISHED
+        },
+        {
+            "soft": False, "status": consts.TaskStatus.FAILED
+        }
+    )
+    @ddt.unpack
+    def test_abort_with_finished_states(self, soft, status):
+        task = objects.Task(mock.MagicMock(), fake=True)
+        task.get_status = mock.MagicMock(return_value=status)
+        task.update_status = mock.MagicMock()
+
+        self.assertRaises(exceptions.RallyException, task.abort, soft)
+
+        self.assertEqual(1, task.get_status.call_count)
+        self.assertFalse(task.update_status.called)
+
+    @ddt.data(True, False)
+    def test_abort_with_running_state(self, soft):
+        task = objects.Task(mock.MagicMock(), fake=True)
+        task.get_status = mock.MagicMock(return_value="running")
+        task.update_status = mock.MagicMock()
+
+        task.abort(soft)
+        if soft:
+            status = consts.TaskStatus.SOFT_ABORTING
+        else:
+            status = consts.TaskStatus.ABORTING
+
+        task.update_status.assert_called_once_with(
+            status,
+            allowed_statuses=(consts.TaskStatus.RUNNING,
+                              consts.TaskStatus.SOFT_ABORTING)
         )
