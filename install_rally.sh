@@ -597,10 +597,11 @@ fi
 
 if [ "$DBTYPE" = 'sqlite' ]; then
     if [ "${DBNAME:0:1}" = '/' ]; then
-        DBCONNSTRING="$DBTYPE:///$DBNAME"
+        DBFILE="$DBNAME"
     else
-        DBCONNSTRING="$DBTYPE:///${RALLY_DATABASE_DIR}/${DBNAME}"
+        DBFILE="${RALLY_DATABASE_DIR}/${DBNAME}"
     fi
+    DBCONNSTRING="sqlite:///${DBFILE}"
 else
     if [ -z "$DBUSER" -o -z "$DBPASSWORD" -o -z "$DBHOST" -o -z "$DBNAME" ]
     then
@@ -758,8 +759,10 @@ install_db_connector
 
 # Install rally
 cd "$SOURCEDIR"
-# Get latest available pip
+# Get latest available pip and reset shell cache
 pip install -i $BASE_PIP_URL -U 'pip'
+hash -r
+
 # Install dependencies
 pip install -i $BASE_PIP_URL pbr 'tox<=1.6.1'
 # Uninstall possible previous version
@@ -843,8 +846,8 @@ else
         SAMPLESDIR=$SOURCEDIR/samples
     fi
     ln -s /usr/local/etc/bash_completion.d/rally.bash_completion /etc/bash_completion.d/ 2> /dev/null || true
-    if [ "$DBTYPE" = 'sqlite' ]; then
-        chmod -R go+w ${RALLY_DATABASE_DIR}
+    if [ -f "${DBFILE}" ]; then
+        chmod go+w "$DBFILE"
     fi
 
     cat <<__EOF__

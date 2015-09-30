@@ -17,6 +17,7 @@
 
 import os
 
+import ddt
 import jsonschema
 import mock
 
@@ -45,6 +46,7 @@ FAKE_DEPLOYMENT_CONFIG = {
 }
 
 
+@ddt.ddt
 class TaskAPITestCase(test.TestCase):
     def setUp(self):
         super(TaskAPITestCase, self).setUp()
@@ -71,10 +73,24 @@ class TaskAPITestCase(test.TestCase):
         ])
 
         mock_task.assert_called_once_with(
-            fake=True,
+            temporary=True,
             deployment_uuid=mock_deployment_get.return_value["uuid"])
         mock_deployment_get.assert_called_once_with(
             mock_deployment_get.return_value["uuid"])
+
+    @mock.patch("rally.api.objects.Task")
+    @mock.patch("rally.api.objects.Deployment",
+                return_value=fakes.FakeDeployment(uuid="deployment_uuid",
+                                                  admin=mock.MagicMock(),
+                                                  users=[]))
+    @mock.patch("rally.api.engine.BenchmarkEngine")
+    def test_validate_engine_exception(self, mock_benchmark_engine,
+                                       mock_deployment, mock_task):
+
+        excpt = exceptions.InvalidTaskException()
+        mock_benchmark_engine.return_value.validate.side_effect = excpt
+        self.assertRaises(exceptions.InvalidTaskException, api.Task.validate,
+                          mock_deployment.return_value["uuid"], "config")
 
     def test_render_template(self):
         self.assertEqual(
@@ -103,6 +119,19 @@ class TaskAPITestCase(test.TestCase):
     def test_render_template_missing_args(self):
         self.assertRaises(TypeError, api.Task.render_template, "{{a}}")
 
+    def test_render_template_include_other_template(self):
+        other_template_path = os.path.join(
+            os.path.dirname(__file__),
+            "..", "..", "samples/tasks/scenarios/nova/boot.json")
+        template = "{%% include \"%s\" %%}" % os.path.basename(
+            other_template_path)
+        with open(other_template_path) as f:
+            other_template = f.read()
+        expect = api.Task.render_template(other_template)
+        actual = api.Task.render_template(template,
+                                          os.path.dirname(other_template_path))
+        self.assertEqual(expect, actual)
+
     @mock.patch("rally.common.objects.Deployment.get",
                 return_value={"uuid": "b0d9cd6c-2c94-4417-a238-35c7019d0257"})
     @mock.patch("rally.common.objects.Task")
@@ -112,7 +141,8 @@ class TaskAPITestCase(test.TestCase):
         mock_task.assert_called_once_with(
             deployment_uuid=mock_deployment_get.return_value["uuid"], tag=tag)
 
-    @mock.patch("rally.api.objects.Task")
+    @mock.patch("rally.api.objects.Task",
+                return_value=fakes.FakeTask(uuid="some_uuid"))
     @mock.patch("rally.api.objects.Deployment.get",
                 return_value=fakes.FakeDeployment(uuid="deployment_uuid",
                                                   admin=mock.MagicMock(),
@@ -126,39 +156,74 @@ class TaskAPITestCase(test.TestCase):
             mock.call("config", mock_task.return_value,
                       admin=mock_deployment_get.return_value["admin"],
                       users=[], abort_on_sla_failure=False),
-            mock.call().validate(),
-            mock.call().run()
+            mock.call().run(),
         ])
 
         mock_task.assert_called_once_with(
             deployment_uuid=mock_deployment_get.return_value["uuid"])
+
         mock_deployment_get.assert_called_once_with(
             mock_deployment_get.return_value["uuid"])
 
-    @mock.patch("rally.api.objects.Task")
-    @mock.patch("rally.api.objects.Deployment.get")
-    @mock.patch("rally.api.engine.BenchmarkEngine")
-    def test_start_invalid_task_ignored(self, mock_benchmark_engine,
-                                        mock_deployment_get, mock_task):
-        mock_benchmark_engine().run.side_effect = (
-            exceptions.InvalidTaskException())
+    @mock.patch("rally.api.objects.Task",
+                return_value=fakes.FakeTask(uuid="some_uuid", task={},
+                                            temporary=True))
+    @mock.patch("rally.api.objects.Deployment.get",
+                return_value=fakes.FakeDeployment(uuid="deployment_uuid",
+                                                  admin=mock.MagicMock(),
+                                                  users=[]))
+    def test_start_temporary_task(self, mock_deployment_get,
+                                  mock_task):
 
-        # check that it doesn't raise anything
-        api.Task.start("deployment_uuid", "config")
+        self.assertRaises(ValueError, api.Task.start,
+                          mock_deployment_get.return_value["uuid"], "config")
 
     @mock.patch("rally.api.objects.Task")
     @mock.patch("rally.api.objects.Deployment.get")
     @mock.patch("rally.api.engine.BenchmarkEngine")
     def test_start_exception(self, mock_benchmark_engine, mock_deployment_get,
                              mock_task):
-        mock_benchmark_engine().run.side_effect = TypeError
+        mock_task.return_value.is_temporary = False
+        mock_benchmark_engine.return_value.run.side_effect = TypeError
         self.assertRaises(TypeError, api.Task.start, "deployment_uuid",
                           "config")
         mock_deployment_get().update_status.assert_called_once_with(
             consts.DeployStatus.DEPLOY_INCONSISTENT)
 
-    def test_abort(self):
-        self.assertRaises(NotImplementedError, api.Task.abort, self.task_uuid)
+    @ddt.data(True, False)
+    @mock.patch("rally.api.time")
+    @mock.patch("rally.api.objects.Task")
+    def test_abort_sync(self, soft, mock_task, mock_time):
+        mock_task.get_status.side_effect = (
+            consts.TaskStatus.INIT,
+            consts.TaskStatus.VERIFYING,
+            consts.TaskStatus.RUNNING,
+            consts.TaskStatus.ABORTING,
+            consts.TaskStatus.SOFT_ABORTING,
+            consts.TaskStatus.ABORTED)
+
+        some_uuid = "ca441749-0eb9-4fcc-b2f6-76d314c55404"
+
+        api.Task.abort(some_uuid, soft=soft, async=False)
+
+        mock_task.get.assert_called_once_with(some_uuid)
+        mock_task.get.return_value.abort.assert_called_once_with(soft=soft)
+        self.assertEqual([mock.call(some_uuid)] * 6,
+                         mock_task.get_status.call_args_list)
+        self.assertTrue(mock_time.sleep.called)
+
+    @ddt.data(True, False)
+    @mock.patch("rally.api.time")
+    @mock.patch("rally.api.objects.Task")
+    def test_abort_async(self, soft, mock_task, mock_time):
+        some_uuid = "133695fb-400d-4988-859c-30bfaa0488ce"
+
+        api.Task.abort(some_uuid, soft=soft, async=True)
+
+        mock_task.get.assert_called_once_with(some_uuid)
+        mock_task.get.return_value.abort.assert_called_once_with(soft=soft)
+        self.assertFalse(mock_task.get_status.called)
+        self.assertFalse(mock_time.sleep.called)
 
     @mock.patch("rally.common.objects.task.db.task_delete")
     def test_delete(self, mock_task_delete):
@@ -305,6 +370,20 @@ class VerificationAPITestCase(BaseDeploymentTestCase):
         self.tempest.verify.assert_called_once_with(set_name="smoke",
                                                     regex=None)
 
+    @mock.patch("rally.common.objects.Deployment.get")
+    @mock.patch("rally.api.objects.Verification")
+    @mock.patch("rally.verification.tempest.tempest.Tempest")
+    def test_import_file(self, mock_tempest, mock_verification,
+                         mock_deployment_get):
+        mock_deployment_get.return_value = {"uuid": self.deployment_uuid}
+
+        mock_tempest.return_value = self.tempest
+        self.tempest.is_installed.return_value = True
+        api.Verification.import_file(self.deployment_uuid, "smoke", "log_file")
+
+        self.tempest.import_file.assert_called_once_with(
+            set_name="smoke", log_file="log_file")
+
     @mock.patch("rally.api.objects.Deployment.get")
     @mock.patch("rally.api.tempest.Tempest")
     def test_install_tempest(self, mock_tempest, mock_deployment_get):
@@ -340,3 +419,10 @@ class VerificationAPITestCase(BaseDeploymentTestCase):
         mock_copy2.assert_called_once_with(fake_conf, tmp_file)
         self.tempest.install.assert_called_once_with()
         mock_move.assert_called_once_with(tmp_file, fake_conf)
+
+    @mock.patch("rally.common.objects.Deployment.get")
+    @mock.patch("rally.verification.tempest.tempest.Tempest")
+    def test_configure_tempest(self, mock_tempest, mock_deployment_get):
+        mock_tempest.return_value = self.tempest
+        api.Verification.configure_tempest(self.deployment_uuid)
+        self.tempest.generate_config_file.assert_called_once_with(False)

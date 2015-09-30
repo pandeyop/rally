@@ -22,6 +22,7 @@ from rally.common import log as logging
 from rally.common import objects
 from rally import consts
 from rally import exceptions
+from rally.boot_from_vol_client import enforce_boot_from_volume
 
 
 CONF = cfg.CONF
@@ -160,6 +161,7 @@ class Clients(object):
                              insecure=self.endpoint.insecure,
                              cacert=self.endpoint.cacert,
                              **self._get_auth_info(password_key="api_key"))
+        enforce_boot_from_volume(client)
         client.set_management_url(compute_api_url)
         return client
 

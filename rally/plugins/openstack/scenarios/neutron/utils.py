@@ -15,6 +15,7 @@
 
 from rally.common.i18n import _
 from rally.common import log as logging
+from rally import exceptions
 from rally.plugins.openstack import scenario
 from rally.plugins.openstack.wrappers import network as network_wrapper
 from rally.task import atomic
@@ -31,6 +32,7 @@ class NeutronScenario(scenario.OpenStackScenario):
     # TODO(rkiran): modify in case LBaaS-v2 requires
     LB_METHOD = "ROUND_ROBIN"
     LB_PROTOCOL = "HTTP"
+    LB_PROTOCOL_PORT = 80
 
     def _warn_about_deprecated_name_kwarg(self, resource, kwargs):
         """Warn about use of a deprecated 'name' kwarg and replace it.
@@ -62,6 +64,20 @@ class NeutronScenario(scenario.OpenStackScenario):
                          "id": list(resource.values())[0]["id"],
                          "name": kwargs["name"]})
 
+    def _get_network_id(self, network, **kwargs):
+        """Get Neutron network ID for the network name.
+
+        param network: str, network name/id
+        param kwargs: dict, network options
+        returns: str, Neutron network-id
+        """
+        networks = self._list_networks(atomic_action=False)
+        for net in networks:
+            if (net["name"] == network) or (net["id"] == network):
+                return net["id"]
+        msg = (_("Network %s not found.") % network)
+        raise exceptions.NotFoundException(message=msg)
+
     @atomic.action_timer("neutron.create_network")
     def _create_network(self, network_create_args):
         """Create neutron network.
@@ -73,10 +89,17 @@ class NeutronScenario(scenario.OpenStackScenario):
         return self.clients("neutron").create_network(
             {"network": network_create_args})
 
-    @atomic.action_timer("neutron.list_networks")
-    def _list_networks(self):
-        """Return user networks list."""
-        return self.clients("neutron").list_networks()["networks"]
+    def _list_networks(self, atomic_action=True, **kwargs):
+        """Return user networks list.
+
+        :param atomic_action: True if this is an atomic action
+        :param kwargs: network list options
+        """
+        if atomic_action:
+            with atomic.ActionTimer(self, "neutron.list_networks"):
+                return self.clients("neutron").list_networks(
+                    **kwargs)["networks"]
+        return self.clients("neutron").list_networks(**kwargs)["networks"]
 
     @atomic.action_timer("neutron.update_network")
     def _update_network(self, network, network_update_args):
@@ -347,3 +370,72 @@ class NeutronScenario(scenario.OpenStackScenario):
         self._warn_about_deprecated_name_kwarg(pool, pool_update_args)
         body = {"pool": pool_update_args}
         return self.clients("neutron").update_pool(pool["pool"]["id"], body)
+
+    def _create_v1_vip(self, pool, **vip_create_args):
+        """Create VIP(v1)
+
+        :parm pool: dict, neutron lb-pool
+        :parm vip_create_args: dict, POST /lb/vips request options
+        :returns: dict, neutron lb vip
+        """
+        args = {"protocol": self.LB_PROTOCOL,
+                "protocol_port": self.LB_PROTOCOL_PORT,
+                "name": self._generate_random_name("rally_vip_"),
+                "pool_id": pool["pool"]["id"],
+                "subnet_id": pool["pool"]["subnet_id"]}
+        args.update(vip_create_args)
+        return self.clients("neutron").create_vip({"vip": args})
+
+    @atomic.action_timer("neutron.list_vips")
+    def _list_v1_vips(self, **kwargs):
+        """Return user lb vip list(v1)."""
+        return self.clients("neutron").list_vips(**kwargs)
+
+    @atomic.action_timer("neutron.delete_vip")
+    def _delete_v1_vip(self, vip):
+        """Delete neutron vip.
+
+        :param vip: neutron Virtual IP object
+        """
+        self.clients("neutron").delete_vip(vip["id"])
+
+    @atomic.action_timer("neutron.update_vip")
+    def _update_v1_vip(self, vip, **vip_update_args):
+        """Updates vip.
+
+        This atomic function updates vip name and admin state
+
+        :param vip: Vip object
+        :param vip_update_args: dict, POST /lb/vips update options
+        :returns: updated neutron vip dict
+        """
+        self._warn_about_deprecated_name_kwarg(vip, vip_update_args)
+        body = {"vip": vip_update_args}
+        return self.clients("neutron").update_vip(vip["vip"]["id"], body)
+
+    @atomic.action_timer("neutron.create_floating_ip")
+    def _create_floatingip(self, floating_network, **floating_ip_args):
+        """Create floating IP with floating_network.
+
+        param: floating_network: str, external network to create floating IP
+        param: floating_ip_args: dict, POST /floatingips create options
+        returns: dict, neutron floating IP
+        """
+        floating_network_id = self._get_network_id(
+            floating_network)
+        args = {"floating_network_id": floating_network_id}
+        args.update(floating_ip_args)
+        return self.clients("neutron").create_floatingip({"floatingip": args})
+
+    @atomic.action_timer("neutron.list_floating_ips")
+    def _list_floating_ips(self, **kwargs):
+        """Return floating IPs list."""
+        return self.clients("neutron").list_floatingips(**kwargs)
+
+    @atomic.action_timer("neutron.delete_floating_ip")
+    def _delete_floating_ip(self, floating_ip):
+        """Delete floating IP.
+
+        :param: dict, floating IP object
+        """
+        return self.clients("neutron").delete_floatingip(floating_ip["id"])

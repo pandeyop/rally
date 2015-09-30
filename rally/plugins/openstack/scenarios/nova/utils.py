@@ -461,6 +461,18 @@ class NovaScenario(scenario.OpenStackScenario):
         )
         return image
 
+    @atomic.action_timer("nova.list_images")
+    def _list_images(self, detailed=False, **kwargs):
+        """List all images.
+
+        :param detailed: True if the image listing
+                         should contain detailed information
+        :param kwargs: Optional additional arguments for image listing
+
+        :returns: Image list
+        """
+        return self.clients("nova").images.list(detailed, **kwargs)
+
     @atomic.action_timer("nova.create_keypair")
     def _create_keypair(self, **kwargs):
         """Create a keypair
@@ -486,7 +498,7 @@ class NovaScenario(scenario.OpenStackScenario):
 
     @atomic.action_timer("nova.boot_servers")
     def _boot_servers(self, image_id, flavor_id, requests, name_prefix=None,
-                      instances_amount=1, **kwargs):
+                      instances_amount=1, auto_assign_nic=False, **kwargs):
         """Boot multiple servers.
 
         Returns when all the servers are actually booted and are in the
@@ -498,11 +510,19 @@ class NovaScenario(scenario.OpenStackScenario):
         :param name_prefix: The prefix to use while naming the created servers.
                             The rest of the server names will be '_<number>'
         :param instances_amount: Number of instances to boot per each request
+        :param auto_assign_nic: bool, whether or not to auto assign NICs
+        :param kwargs: other optional parameters to initialize the servers
 
         :returns: List of created server objects
         """
         if not name_prefix:
             name_prefix = self._generate_random_name()
+
+        if auto_assign_nic and not kwargs.get("nics", False):
+            nic = self._pick_random_nic()
+            if nic:
+                kwargs["nics"] = nic
+
         for i in range(requests):
             self.clients("nova").servers.create("%s_%d" % (name_prefix, i),
                                                 image_id, flavor_id,
@@ -751,6 +771,20 @@ class NovaScenario(scenario.OpenStackScenario):
                             to_port=(i * rules_per_security_group + j + 1),
                             ip_protocol=ip_protocol,
                             cidr=cidr)
+
+    def _update_security_groups(self, security_groups):
+        """Update a list of security groups
+
+        :param security_groups: list, security_groups that are to be updated
+        """
+        with atomic.ActionTimer(self, "nova.update_%s_security_groups" %
+                                len(security_groups)):
+            for sec_group in security_groups:
+                sg_new_name = self._generate_random_name()
+                sg_new_desc = self._generate_random_name()
+                self.clients("nova").security_groups.update(sec_group.id,
+                                                            sg_new_name,
+                                                            sg_new_desc)
 
     def _delete_security_groups(self, security_group):
         with atomic.ActionTimer(self, "nova.delete_%s_security_groups" %

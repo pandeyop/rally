@@ -279,6 +279,8 @@
           image:
               name: {{image_name}}
           servers_per_tenant: 2
+        network:
+          networks_per_tenant: 2
       sla:
         failure_rate:
           max: 0
@@ -463,6 +465,22 @@
         failure_rate:
           max: 0
 
+  NovaImages.list_images:
+    -
+      args:
+        detailed: True
+      runner:
+        type: "constant"
+        times: 5
+        concurrency: 2
+      context:
+        users:
+          tenants: 2
+          users_per_tenant: 2
+      sla:
+        failure_rate:
+          max: 0
+
   NovaSecGroup.create_and_delete_secgroups:
     -
       args:
@@ -480,6 +498,25 @@
           nova:
             security_groups: -1
             security_group_rules: -1
+      sla:
+        failure_rate:
+          max: 0
+
+  NovaSecGroup.create_and_update_secgroups:
+    -
+      args:
+        security_group_count: 5
+      runner:
+        type: "constant"
+        times: 4
+        concurrency: 4
+      context:
+        users:
+          tenants: 3
+          users_per_tenant: 2
+        quotas:
+          nova:
+            security_groups: -1
       sla:
         failure_rate:
           max: 0
@@ -577,6 +614,23 @@
       sla:
         failure_rate:
           max: 0
+
+  NovaServers.boot_and_delete_multiple_servers:
+    -
+      args:
+        flavor:
+          name: "m1.tiny"
+        image:
+          name: {{image_name}}
+        count: 5
+      runner:
+        type: "constant"
+        times: 2
+        concurrency: 2
+      context:
+        users:
+          tenants: 2
+          users_per_tenant: 2
 
   NovaFloatingIpsBulk.create_and_list_floating_ips_bulk:
     -
@@ -693,4 +747,3 @@
       sla:
         failure_rate:
           max: 0
-

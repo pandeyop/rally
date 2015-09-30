@@ -22,17 +22,17 @@ from rally.plugins.openstack.scenarios.vm import vmtasks
 from tests.unit import test
 
 
-class VMTasksTestCase(test.TestCase):
+class VMTasksTestCase(test.ScenarioTestCase):
 
     def setUp(self):
         super(VMTasksTestCase, self).setUp()
-        self.scenario = vmtasks.VMTasks(
-            context={"user": {"keypair": {"name": "keypair_name"},
-                              "endpoint": mock.MagicMock()}}
-        )
+        self.context.update({"user": {"keypair": {"name": "keypair_name"},
+                                      "endpoint": mock.MagicMock()}})
+        self.scenario = vmtasks.VMTasks(context=self.context)
         self.ip = {"id": "foo_id", "ip": "foo_ip", "is_floating": True}
         self.scenario._boot_server_with_fip = mock.Mock(
             return_value=("foo_server", self.ip))
+        self.scenario._wait_for_ping = mock.Mock()
         self.scenario._delete_server_with_fip = mock.Mock()
         self.scenario._create_volume = mock.Mock(
             return_value=mock.Mock(id="foo_volume"))
@@ -59,11 +59,12 @@ class VMTasksTestCase(test.TestCase):
         self.scenario._create_volume.assert_called_once_with(
             16, imageRef=None)
         self.scenario._boot_server_with_fip.assert_called_once_with(
-            "foo_image", "foo_flavor", use_floating_ip="use_fip",
-            floating_network="ext_network", key_name="keypair_name",
+            "foo_image", "foo_flavor", key_name="keypair_name",
+            use_floating_ip="use_fip", floating_network="ext_network",
             block_device_mapping={"vdrally": "foo_volume:::1"},
             foo_arg="foo_value")
 
+        self.scenario._wait_for_ping.assert_called_once_with("foo_ip")
         self.scenario._run_command.assert_called_once_with(
             "foo_ip", 22, "foo_username", "foo_password",
             command={"script_file": "foo_script",
@@ -86,8 +87,8 @@ class VMTasksTestCase(test.TestCase):
         self.scenario._create_volume.assert_called_once_with(
             16, imageRef=None)
         self.scenario._boot_server_with_fip.assert_called_once_with(
-            "foo_image", "foo_flavor", use_floating_ip="use_fip",
-            floating_network="ext_network", key_name="keypair_name",
+            "foo_image", "foo_flavor", key_name="keypair_name",
+            use_floating_ip="use_fip", floating_network="ext_network",
             block_device_mapping={"vdrally": "foo_volume:::1"},
             foo_arg="foo_value")
 

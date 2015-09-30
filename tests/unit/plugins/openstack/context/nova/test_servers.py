@@ -37,17 +37,16 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
     def test_init(self):
         tenants_count = 2
         servers_per_tenant = 5
-        context = {}
-        context["task"] = mock.MagicMock()
-        context["config"] = {
-            "servers": {
-                "servers_per_tenant": servers_per_tenant,
-            }
-        }
-        context["tenants"] = self._gen_tenants(tenants_count)
+        self.context.update({
+            "config": {
+                "servers": {
+                    "servers_per_tenant": servers_per_tenant,
+                }
+            },
+            "tenants": self._gen_tenants(tenants_count)})
 
-        inst = servers.ServerGenerator(context)
-        self.assertEqual(context["config"]["servers"], inst.config)
+        inst = servers.ServerGenerator(self.context)
+        self.assertEqual(self.context["config"]["servers"], inst.config)
 
     @mock.patch("%s.nova.utils.NovaScenario._boot_servers" % SCN,
                 return_value=[
@@ -77,7 +76,7 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
                 users.append({"id": i, "tenant_id": id_,
                               "endpoint": mock.MagicMock()})
 
-        real_context = {
+        self.context.update({
             "config": {
                 "users": {
                     "tenants": 2,
@@ -85,6 +84,7 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
                     "concurrent": 10,
                 },
                 "servers": {
+                    "auto_assign_nic": True,
                     "servers_per_tenant": 5,
                     "image": {
                         "name": "cirros-0.3.4-x86_64-uec",
@@ -97,20 +97,30 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
             "admin": {
                 "endpoint": mock.MagicMock()
             },
-            "task": mock.MagicMock(),
             "users": users,
             "tenants": tenants
-        }
+        })
 
-        new_context = copy.deepcopy(real_context)
+        new_context = copy.deepcopy(self.context)
         for id_ in new_context["tenants"]:
             new_context["tenants"][id_].setdefault("servers", [])
             for i in range(servers_per_tenant):
                 new_context["tenants"][id_]["servers"].append("uuid")
 
-        servers_ctx = servers.ServerGenerator(real_context)
+        servers_ctx = servers.ServerGenerator(self.context)
         servers_ctx.setup()
-        self.assertEqual(new_context, real_context)
+        self.assertEqual(new_context, self.context)
+        image_id = mock_image_resource_type_transform.return_value
+        flavor_id = mock_flavor_resource_type_transform.return_value
+        servers_ctx_config = self.context["config"]["servers"]
+        expected_auto_nic = servers_ctx_config.get("auto_assign_nic", False)
+        expected_requests = servers_ctx_config.get("servers_per_tenant", False)
+        called_times = len(tenants)
+        mock_calls = [mock.call(image_id, flavor_id,
+                                auto_assign_nic=expected_auto_nic,
+                                requests=expected_requests)
+                      for i in range(called_times)]
+        mock_nova_scenario__boot_servers.assert_has_calls(mock_calls)
 
     @mock.patch("%s.servers.osclients" % CTX)
     @mock.patch("%s.servers.resource_manager.cleanup" % CTX)
@@ -130,7 +140,7 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
             for j in range(servers_per_tenant):
                 tenants[id_]["servers"].append("uuid")
 
-        context = {
+        self.context.update({
             "config": {
                 "users": {
                     "tenants": 2,
@@ -150,13 +160,12 @@ class ServerGeneratorTestCase(test.ScenarioTestCase):
             "admin": {
                 "endpoint": mock.MagicMock()
             },
-            "task": mock.MagicMock(),
             "users": users,
             "tenants": tenants
-        }
+        })
 
-        servers_ctx = servers.ServerGenerator(context)
+        servers_ctx = servers.ServerGenerator(self.context)
         servers_ctx.cleanup()
 
         mock_cleanup.assert_called_once_with(names=["nova.servers"],
-                                             users=context["users"])
+                                             users=self.context["users"])
