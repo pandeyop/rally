@@ -20,7 +20,6 @@ from neutronclient.common import exceptions as neutron_exceptions
 from rally.common.plugin import discover
 from rally.plugins.openstack.context.cleanup import base
 from rally.plugins.openstack.context.cleanup import resources
-from rally.plugins.openstack.scenarios.keystone import utils as keystone_utils
 from tests.unit import test
 
 BASE = "rally.plugins.openstack.context.cleanup.resources"
@@ -451,22 +450,23 @@ class KeystoneMixinTestCase(test.TestCase):
             keystone_mixin.admin.keystone.return_value)
         mock_wrap().delete_some_resource.assert_called_once_with("id_a")
 
+    @mock.patch(
+        "rally.plugins.openstack.scenarios.keystone.utils.is_temporary")
     @mock.patch("%s.keystone_wrapper.wrap" % BASE)
-    def test_list(self, mock_wrap):
+    def test_list(self, mock_wrap, mock_is_temporary):
         keystone_mixin = self.get_keystone_mixin()
         keystone_mixin._resource = "some_resource2"
         keystone_mixin.admin = mock.MagicMock()
 
         result = [mock.MagicMock(), mock.MagicMock(), mock.MagicMock()]
-        prefix = keystone_utils.KeystoneScenario.RESOURCE_NAME_PREFIX
-        result[0].name = prefix + "keystone-a"
-        result[1].name = prefix + "keystone-b"
-        result[2].name = "not_a_keystone_pattern"
+        mock_is_temporary.side_effect = [True, True, False]
 
         mock_wrap().list_some_resource2s.return_value = result
 
         self.assertSequenceEqual(result[:2], keystone_mixin.list())
         mock_wrap().list_some_resource2s.assert_called_once_with()
+
+        mock_is_temporary.assert_has_calls([mock.call(r) for r in result])
 
 
 class SwiftMixinTestCase(test.TestCase):
@@ -602,12 +602,13 @@ class FuelEnvironmentTestCase(test.TestCase):
 
     @mock.patch("%s.FuelEnvironment._manager" % BASE)
     def test_is_deleted(self, mock__manager):
-        mock__manager.return_value.get.return_value = []
+        mock__manager.return_value.get.return_value = None
         fres = resources.FuelEnvironment()
         fres.id = mock.Mock()
         self.assertTrue(fres.is_deleted())
-        mock__manager.return_value.get.return_value = ["env"]
+        mock__manager.return_value.get.return_value = "env"
         self.assertFalse(fres.is_deleted())
+        mock__manager.return_value.get.assert_called_with(fres.id.return_value)
 
     @mock.patch("%s.FuelEnvironment._manager" % BASE)
     def test_list(self, mock__manager):

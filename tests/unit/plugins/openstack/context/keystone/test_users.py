@@ -117,7 +117,7 @@ class UserGeneratorTestCase(test.ScenarioTestCase):
 
         user_generator._remove_default_security_group()
 
-        mock_wrap.assert_called_once_with(admin_clients)
+        mock_wrap.assert_called_once_with(admin_clients, self.context["task"])
         net_wrapper.supports_extension.assert_called_once_with(
             "security-group")
 
@@ -147,7 +147,8 @@ class UserGeneratorTestCase(test.ScenarioTestCase):
 
         user_generator._remove_default_security_group()
 
-        mock_network.wrap.assert_called_once_with(admin_clients)
+        mock_network.wrap.assert_called_once_with(admin_clients,
+                                                  self.context["task"])
 
         mock_iterate_per_tenants.assert_called_once_with(
             user_generator.context["users"])
@@ -328,16 +329,14 @@ class UserGeneratorTestCase(test.ScenarioTestCase):
         wrapped_keystone.create_user.side_effect = user_list
 
         with users.UserGenerator(tmp_context) as ctx:
+            ctx.generate_random_name = mock.Mock()
             ctx.setup()
 
             create_tenant_calls = []
             for i, t in enumerate(ctx.context["tenants"]):
-                pattern = users.UserGenerator.PATTERN_TENANT
                 create_tenant_calls.append(
-                    mock.call(
-                        pattern % {"task_id": tmp_context["task"]["uuid"],
-                                   "iter": i},
-                        ctx.config["project_domain"]))
+                    mock.call(ctx.generate_random_name.return_value,
+                              ctx.config["project_domain"]))
 
             for user in ctx.context["users"]:
                 self.assertEqual(set(["id", "endpoint", "tenant_id"]),

@@ -130,7 +130,7 @@ class NovaFloatingIpsBulk(SynchronizedDeletion, base.ResourceManager):
 
 
 @base.resource("nova", "networks", order=next(_nova_order),
-               admin_required=True)
+               admin_required=True, tenant_resource=True)
 class NovaNetworks(SynchronizedDeletion, base.ResourceManager):
 
     def list(self):
@@ -218,6 +218,24 @@ class NeutronLbaasV1Mixin(NeutronMixin):
         return []
 
 
+@base.resource("neutron", "vip", order=next(_neutron_order),
+               tenant_resource=True)
+class NeutronV1Vip(NeutronLbaasV1Mixin):
+    pass
+
+
+@base.resource("neutron", "health_monitor", order=next(_neutron_order),
+               tenant_resource=True)
+class NeutronV1Healthmonitor(NeutronLbaasV1Mixin):
+    pass
+
+
+@base.resource("neutron", "pool", order=next(_neutron_order),
+               tenant_resource=True)
+class NeutronV1Pool(NeutronLbaasV1Mixin):
+    pass
+
+
 @base.resource("neutron", "port", order=next(_neutron_order),
                tenant_resource=True)
 class NeutronPort(NeutronMixin):
@@ -242,18 +260,6 @@ class NeutronPort(NeutronMixin):
 @base.resource("neutron", "router", order=next(_neutron_order),
                tenant_resource=True)
 class NeutronRouter(NeutronMixin):
-    pass
-
-
-@base.resource("neutron", "vip", order=next(_neutron_order),
-               tenant_resource=True)
-class NeutronV1Vip(NeutronLbaasV1Mixin):
-    pass
-
-
-@base.resource("neutron", "pool", order=next(_neutron_order),
-               tenant_resource=True)
-class NeutronV1Pool(NeutronLbaasV1Mixin):
     pass
 
 

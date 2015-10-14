@@ -209,19 +209,17 @@
   NeutronLoadbalancerV1.create_and_delete_vips:
     -
       args:
+        pool_create_args: {}
         vip_create_args: {}
       runner:
         type: "constant"
         times: {{smoke or 20}}
-        concurrency: {{smoke or 1}}
+        concurrency: {{smoke or 10}}
       context:
         users:
           tenants: {{smoke or 5}}
           users_per_tenant: {{smoke or 2}}
         network: {}
-        lbaas:
-          pool: {}
-          lbaas_version: 1
         quotas:
           neutron:
             network: -1
@@ -253,6 +251,65 @@
             subnet: -1
             pool: -1
             vip: -1
+      sla:
+        failure_rate:
+          max: 0
+
+  NeutronLoadbalancerV1.create_and_list_healthmonitors:
+    -
+      args:
+        healthmonitor_create_args: {}
+      runner:
+        type: "constant"
+        times: {{smoke or 20}}
+        concurrency: {{smoke or 10}}
+      context:
+        users:
+          tenants: {{smoke or 5}}
+          users_per_tenant: {{smoke or 2}}
+        quotas:
+          neutron:
+            health_monitor: -1
+      sla:
+        failure_rate:
+          max: 0
+
+  NeutronLoadbalancerV1.create_and_delete_healthmonitors:
+    -
+      args:
+        healthmonitor_create_args: {}
+      runner:
+        type: "constant"
+        times: {{smoke or 20}}
+        concurrency: {{smoke or 10}}
+      context:
+        users:
+          tenants: {{smoke or 5}}
+          users_per_tenant: {{smoke or 2}}
+        quotas:
+          neutron:
+            health_monitor: -1
+      sla:
+        failure_rate:
+          max: 0
+
+  NeutronLoadbalancerV1.create_and_update_healthmonitors:
+    -
+      args:
+        healthmonitor_create_args: {}
+        healthmonitor_update_args:
+          admin_state_up: False
+      runner:
+        type: "constant"
+        times: {{smoke or 20}}
+        concurrency: {{smoke or 10}}
+      context:
+        users:
+          tenants: {{smoke or 5}}
+          users_per_tenant: {{smoke or 2}}
+        quotas:
+          neutron:
+            health_monitor: -1
       sla:
         failure_rate:
           max: 0
@@ -605,8 +662,8 @@
       context:
         image_command_customizer:
           command:
-            local_path: "/home/jenkins/.rally/extra/script_benchmark.sh"
-            remote_path: "./script_benchmark.sh"
+            local_path: "/home/jenkins/.rally/extra/install_benchmark.sh"
+            remote_path: "./install_benchmark.sh"
           flavor:
             name: "m1.tiny"
           image:

@@ -21,6 +21,8 @@ import subprocess
 import traceback
 import unittest
 
+import six
+
 from rally import api
 from rally.common import db
 from rally import plugins
@@ -48,7 +50,7 @@ class TestTaskSamples(unittest.TestCase):
 
     def test_task_samples_is_valid(self):
         plugins.load()
-        rally = utils.Rally()
+        rally = utils.Rally(force_new_db=True)
         db.db_options.set_defaults(
             db.CONF, connection="sqlite:///%s/db" % rally.tmp_dir,
             sqlite_db="rally.sqlite")
@@ -80,7 +82,7 @@ class TestTaskSamples(unittest.TestCase):
                         task_config = json.loads(rendered_task)
                         api.Task.validate("MAIN", task_config)
                     except Exception as e:
-                        if not self._skip(e.message):
+                        if not self._skip(six.text_type(e)):
                             print (traceback.format_exc())
                             print ("Failed on task config %s with error." %
                                    full_path)
