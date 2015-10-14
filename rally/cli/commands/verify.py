@@ -79,7 +79,7 @@ class VerifyCommands(object):
             set_name = "full"
         if set_name and set_name not in (list(consts.TempestTestsSets) +
                                          list(consts.TempestTestsAPI)):
-            print("Sorry, but there are no desired tempest test set. Please "
+            print("Sorry, but there are no desired Tempest test set. Please, "
                   "choose from: %s" % ", ".join(list(consts.TempestTestsSets) +
                                                 list(consts.TempestTestsAPI)))
             return (1)
@@ -91,30 +91,32 @@ class VerifyCommands(object):
 
     @cliutils.args("--deployment", dest="deployment", type=str,
                    required=False, help="UUID or name of a deployment.")
-    @cliutils.args("--set-name", dest="set_name", type=str, required=False,
+    @cliutils.args("--set", dest="set_name", type=str, required=False,
                    help="Name of tempest test set. Available sets: %s" % ", ".
                    join(list(consts.TempestTestsSets) +
                         list(consts.TempestTestsAPI)))
     @cliutils.args("--file", dest="log_file", type=str,
                    required=True,
-                   help="User specified Tempest log file location")
+                   help="User specified Tempest log file location. "
+                        "Note, Tempest log file needs to be in subunit format")
     @cliutils.args("--no-use", action="store_false", dest="do_use",
                    required=False,
                    help="Don't set new task as default for future operations")
     @cliutils.alias("import")
-    def import_file(self, deployment=None, set_name=None, log_file=None,
-                    do_use=True):
-        """Import a tempest result into rally.
+    @envutils.with_default_deployment(cli_arg_name="deployment")
+    def import_results(self, deployment=None, set_name="", log_file=None,
+                       do_use=True):
+        """Import Tempest tests results into the Rally database.
 
         :param deployment: UUID or name of a deployment
         :param set_name: Name of tempest test set
         :param do_use: Use new task as default for future operations
-        :param log_file: User specified Tempest log file
+        :param log_file: User specified Tempest log file in subunit format
         """
 
-        deployment, verification = api.Verification.import_file(deployment,
-                                                                set_name,
-                                                                log_file)
+        deployment, verification = api.Verification.import_results(deployment,
+                                                                   set_name,
+                                                                   log_file)
 
         if do_use:
             self.use(verification["uuid"])

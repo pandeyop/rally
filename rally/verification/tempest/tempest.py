@@ -180,7 +180,8 @@ class Tempest(object):
         path_to_venv = self.path(".venv")
 
         if not os.path.isdir(path_to_venv):
-            print("No virtual environment found...Install the virtualenv.")
+            LOG.debug("No virtual environment for Tempest found.")
+            LOG.info(_("Installing the virtual environment for Tempest."))
             LOG.debug("Virtual environment directory: %s" % path_to_venv)
             required_vers = (2, 7)
             if sys.version_info[:2] != required_vers:
@@ -229,7 +230,7 @@ class Tempest(object):
             msg = _("Creation of configuration file for tempest.")
             LOG.info(_("Starting: ") + msg)
 
-            config.TempestConf(self.deployment).generate(self.config_file)
+            config.TempestConfig(self.deployment).generate(self.config_file)
             LOG.info(_("Completed: ") + msg)
         else:
             LOG.info("Tempest is already configured.")
@@ -238,7 +239,7 @@ class Tempest(object):
 
     def _initialize_testr(self):
         if not os.path.isdir(self.path(".testrepository")):
-            print(_("Test Repository initialization."))
+            LOG.debug("Test Repository initialization.")
             try:
                 check_output("%s testr init" % self.venv_wrapper,
                              shell=True, cwd=self.path())
@@ -251,8 +252,7 @@ class Tempest(object):
         return os.path.exists(self.path(".venv"))
 
     def _clone(self):
-        print("Please wait while tempest is being cloned. "
-              "This could take a few minutes...")
+        LOG.info(_("Please, wait while Tempest is being cloned."))
         try:
             subprocess.check_call(["git", "clone",
                                    self.tempest_source,
@@ -281,10 +281,10 @@ class Tempest(object):
                 self.uninstall()
                 raise TempestSetupFailure("failed cmd: '%s'" % e.cmd)
             else:
-                print("Tempest has been successfully installed!")
+                LOG.info(_("Tempest has been successfully installed!"))
 
         else:
-            print("Tempest is already installed")
+            LOG.info(_("Tempest is already installed."))
 
     def uninstall(self):
         """Removes local Tempest repo and virtualenv for deployment
@@ -311,8 +311,8 @@ class Tempest(object):
         try:
             self.run(testr_arg)
         except subprocess.CalledProcessError:
-            print("Test set '%s' has been finished with error. "
-                  "Check log for details" % set_name)
+            LOG.info(_("Test set '%s' has been finished with errors. "
+                       "Check logs for details.") % set_name)
 
     def run(self, testr_arg=None, log_file=None, tempest_conf=None):
         """Launch tempest with given arguments
@@ -345,8 +345,12 @@ class Tempest(object):
                 "log_file": log_file or self.log_file_raw
             })
         LOG.debug("Test(s) started by the command: %s" % test_cmd)
-        subprocess.check_call(test_cmd, cwd=self.path(),
-                              env=self.env, shell=True)
+        # Create all resources needed for Tempest before running tests.
+        # Once tests finish, all created resources will be deleted.
+        with config.TempestResourcesContext(self.deployment, self.config_file):
+            # Run tests
+            subprocess.check_call(test_cmd, cwd=self.path(),
+                                  env=self.env, shell=True)
 
     def discover_tests(self, pattern=""):
         """Return a set of discovered tests which match given pattern."""
@@ -393,9 +397,9 @@ class Tempest(object):
         self._prepare_and_run(set_name, regex)
         self._save_results()
 
-    def import_file(self, set_name, log_file):
+    def import_results(self, set_name, log_file):
         if log_file:
             self.verification.start_verifying(set_name)
             self._save_results(log_file)
         else:
-            LOG.error("No import file specified.")
+            LOG.error("No log file to import results was specified.")

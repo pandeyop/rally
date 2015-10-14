@@ -103,8 +103,6 @@ class UserGenerator(UserContextMixin, context.Context):
         },
         "additionalProperties": False
     }
-    PATTERN_TENANT = "ctx_rally_%(task_id)s_tenant_%(iter)i"
-    PATTERN_USER = "ctx_rally_%(tenant_id)s_user_%(uid)d"
 
     DEFAULT_CONFIG = {
         "tenants": 1,
@@ -126,8 +124,9 @@ class UserGenerator(UserContextMixin, context.Context):
         if consts.Service.NEUTRON not in clients.services().values():
             return
 
-        use_sg, msg = network.wrap(clients).supports_extension(
-            "security-group")
+        use_sg, msg = network.wrap(clients,
+                                   self.context["task"]).supports_extension(
+                                       "security-group")
         if not use_sg:
             LOG.debug("Security group context is disabled: %s" % msg)
             return
@@ -180,7 +179,7 @@ class UserGenerator(UserContextMixin, context.Context):
                 clients = osclients.Clients(self.endpoint)
                 cache["client"] = keystone.wrap(clients.keystone())
             tenant = cache["client"].create_project(
-                self.PATTERN_TENANT % {"task_id": task_id, "iter": i}, domain)
+                self.generate_random_name(), domain)
             tenant_dict = {"id": tenant.id, "name": tenant.name}
             tenants.append(tenant_dict)
 
@@ -202,8 +201,7 @@ class UserGenerator(UserContextMixin, context.Context):
         def publish(queue):
             for tenant_id in self.context["tenants"]:
                 for user_id in range(users_per_tenant):
-                    username = self.PATTERN_USER % {"tenant_id": tenant_id,
-                                                    "uid": user_id}
+                    username = self.generate_random_name()
                     password = str(uuid.uuid4())
                     args = (username, password, self.config["project_domain"],
                             self.config["user_domain"], tenant_id)
